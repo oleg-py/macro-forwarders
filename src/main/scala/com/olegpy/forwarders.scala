@@ -42,7 +42,7 @@ object forwarders {
         lastList   <- paramss.lastOption
         firstParam <- lastList.headOption
         if firstParam.mods.exists(_.is[Mod.Implicit])
-      } yield paramss.init :+ (lastList :+ p)
+      } yield paramss.init :+ (p +: lastList)
 
       updatedLast.getOrElse(paramss :+ Seq(p))
     }

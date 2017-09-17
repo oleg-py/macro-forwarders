@@ -1,7 +1,7 @@
 name := "macro-forwarders"
 
 inThisBuild(Seq(
-  version := "0.1.0",
+  version := "0.1.1",
   organization := "com.olegpy",
   scalaVersion := "2.12.3"
 ))
