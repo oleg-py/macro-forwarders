@@ -6,36 +6,66 @@ import scala.collection.immutable.Seq
 
 class forwarders extends StaticAnnotation {
   inline def apply(defn: Any): Any = meta {
+    import forwarders._
+
     defn match {
-      case orig @ q"trait $name[..$tps] { ..$stats }" =>
+      case MaybeCompanion(TraitOrClass(orig, name, tps, stats), companionO) =>
+        val companion = companionO getOrElse {
+          q"""object ${Term.Name(name.value)}"""
+        }
+
         q"""
            $orig
-           ${forwarders.expand(name, tps, stats)}
-         """
-      case orig @ q"trait $name { ..$stats }" =>
-        q"""
-           $orig
-           ${forwarders.expand(name, Seq(), stats)}
+           ${expand(name, tps, stats, companion)}
          """
       case _ =>
-        abort("@algebra can only be used on a trait")
+        abort("@forwarders can only be used on a trait")
     }
   }
 }
 
 object forwarders {
-  def expand(traitName: Type.Name, traitTParams: Seq[Type.Param], traitStats: Seq[Stat]): Stat = {
-    val evName = Term.fresh(traitName.value)
+  object MaybeCompanion {
+    def unapply(a: Any): Option[(Defn, Option[Defn.Object])] = a match {
+      case Term.Block(Seq(cls: Defn, companion: Defn.Object)) => Some((cls, Some(companion)))
+      case cls: Defn => Some((cls, None))
+      case _ => None
+    }
+  }
 
-    val traitTypeParamNames = traitTParams.map(_.name.value).toSet
+  object TraitOrClass {
+    def unapply(defn: Defn): Option[(Defn, Type.Name, Seq[Type.Param], Seq[Stat])] =
+      defn match {
+        case cls @ Defn.Class(_, name, tps, _, tmpl) => Some((cls, name, tps, tmpl.stats.to[Seq].flatten))
+        case trt @ Defn.Trait(_, name, tps, _, tmpl) => Some((trt, name, tps, tmpl.stats.to[Seq].flatten))
+        case _ => None
+      }
+  }
+
+  object PublicOnly {
+    def unapply(mods: Seq[Mod]): Boolean = !mods.exists {
+      case Mod.Private(_) | Mod.Protected(_) => true
+      case _ => false
+    }
+  }
+
+  def expand(
+    typeName: Type.Name,
+    tParams: Seq[Type.Param],
+    stats: Seq[Stat],
+    companion: Defn.Object
+  ): Defn.Object = {
+    val evName = Term.fresh(typeName.value)
+
+    val traitTypeParamNames = tParams.map(_.name.value).toSet
 
     def addTypes(tparams: Seq[Type.Param]) =
-      if (!tparams.exists(tp => traitTypeParamNames(tp.name.value))) traitTParams ++ tparams
+      if (!tparams.exists(tp => traitTypeParamNames(tp.name.value))) tParams ++ tparams
       else abort("Shadowing of type parameters is not supported")
 
     def addImplicit(paramss: Seq[Seq[Term.Param]]) = {
-      val tt = traitTParams.map(p => Type.Name(p.name.value))
-      val evType = t"$traitName[..$tt]"
+      val tt = tParams.map(p => Type.Name(p.name.value))
+      val evType = t"$typeName[..$tt]"
       val p = param"implicit $evName: $evType"
 
       val updatedLast = for {
@@ -61,25 +91,25 @@ object forwarders {
       )
     }
 
-    val enhance: Stat => Seq[Stat] = {
-      case Decl.Val(_, pats, decl) =>
+    val mkDelegates: Stat => Seq[Stat] = {
+      case Decl.Val(PublicOnly(), pats, decl) =>
         pats.map(term => writeDef(term.name, Seq(), Seq(), Some(decl)))
 
-      case Defn.Val(_, pats, decl, _) =>
+      case Defn.Val(PublicOnly(), pats, decl, _) =>
         pats.collect {
           case Pat.Var.Term(name) => writeDef(name, Seq(), Seq(), decl)
         }
 
-      case Decl.Def(_, name, tparams, paramss, decltpe) =>
+      case Decl.Def(PublicOnly(), name, tparams, paramss, decltpe) =>
         Seq(writeDef(name, tparams, paramss, Some(decltpe)))
 
-      case Defn.Def(_, name, tparams, paramss, decltpe, _) =>
+      case Defn.Def(PublicOnly(), name, tparams, paramss, decltpe, _) =>
         Seq(writeDef(name, tparams, paramss, decltpe))
 
       case _ => Seq()
     }
 
-    val hasApply = traitStats.exists {
+    val hasApply = stats.exists {
       case Decl.Val(_, pats, _)    => pats.exists(_.name == "apply")
       case Defn.Val(_, pats, _, _) => pats.exists {
         case Pat.Var.Term(Term.Name("apply")) => true
@@ -90,15 +120,18 @@ object forwarders {
       case _ => false
     }
 
-    val typeclassApply = if (hasApply || traitTParams.isEmpty) Seq()
-                         else Seq(q"def apply[..$traitTParams](...${addImplicit(Seq())}) = $evName")
+    val typeclassApply =
+      if (hasApply || tParams.isEmpty) Seq()
+      else Seq(q"def apply[..$tParams](...${addImplicit(Seq())}) = $evName")
 
+    val opsObject = q""" object ops { ..${stats flatMap mkDelegates} }"""
 
-    q"""
-      object ${Term.Name(traitName.value)} {
-        ..$typeclassApply
-        ..${traitStats flatMap enhance}
-      }
-    """
+    val newStats = Seq(
+      typeclassApply,
+      Seq(opsObject),
+      companion.templ.stats.to[Seq].flatten
+    ).flatten
+
+    companion.copy(templ = companion.templ.copy(stats = Some(newStats)))
   }
 }

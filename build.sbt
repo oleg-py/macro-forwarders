@@ -1,13 +1,13 @@
 name := "macro-forwarders"
 
 inThisBuild(Seq(
-  version := "0.1.1",
+  version := "0.2.0",
   organization := "com.olegpy",
   scalaVersion := "2.12.3"
 ))
 
 libraryDependencies ++= Seq(
-  "org.scalameta" %% "scalameta" % "1.8.0",
+  "org.scalameta" %% "scalameta" % "1.8.0" % Provided,
   "org.scalameta" %% "testkit"   % "1.8.0" % Test,
   "com.lihaoyi"   %% "utest"     % "0.5.3" % Test
 )
