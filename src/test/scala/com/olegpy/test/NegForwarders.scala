@@ -13,8 +13,8 @@ class NegForwarders extends TestSuite {
       }
       implicit val foo = new Foo[Int] { }
 
-      * - compileError("""Foo.ops.protectedMethod""")
-      * - compileError("""Foo.ops.privateMethod""")
+      * - compileError("""Foo.protectedMethod""")
+      * - compileError("""Foo.privateMethod""")
     }
   }
 }

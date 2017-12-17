@@ -124,11 +124,9 @@ object forwarders {
       if (hasApply || tParams.isEmpty) Seq()
       else Seq(q"def apply[..$tParams](...${addImplicit(Seq())}) = $evName")
 
-    val opsObject = q""" object ops { ..${stats flatMap mkDelegates} }"""
-
     val newStats = Seq(
       typeclassApply,
-      Seq(opsObject),
+      stats flatMap mkDelegates,
       companion.templ.stats.to[Seq].flatten
     ).flatten
 

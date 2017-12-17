@@ -51,14 +51,6 @@ object Applicability extends TestSuite {
         * - compileError("@forwarders case object Him")
       }
 
-      "companion with `ops` field" - {
-        compileError(
-          """
-             @forwarders trait Foo
-             object Foo { val ops = 42 }
-          """)
-      }
-
       "shadowed type parameters" - {
         compileError("""@forwarders trait Foo[A]{ def mkA[A]: A = ??? }""")
       }
